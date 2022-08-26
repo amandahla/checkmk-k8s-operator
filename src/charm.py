@@ -1,104 +1,81 @@
 #!/usr/bin/env python3
-# Copyright 2022 Canonical Ltd.
+# Copyright 2022 Amanda Katz
 # See LICENSE file for licensing details.
 #
 # Learn more at: https://juju.is/docs/sdk
 
-"""Charm the service.
-
-Refer to the following post for a quick-start guide that will help you
-develop a new k8s charm using the Operator Framework:
-
-    https://discourse.charmhub.io/t/4208
-"""
+"""Charmed Operator for Checkmk; an Infrastructure and Application Monitoring."""
 
 import logging
 
 from ops.charm import CharmBase
 from ops.framework import StoredState
 from ops.main import main
+from charms.observability_libs.v0.kubernetes_service_patch import KubernetesServicePatch
+from ops.pebble import Layer
 from ops.model import ActiveStatus
 
 logger = logging.getLogger(__name__)
 
 
-class OperatorTemplateCharm(CharmBase):
-    """Charm the service."""
+class CheckmkK8SOperatorCharm(CharmBase):
+    """Charmed Operator for Checkmk, an Infrastructure and Application Monitoring."""
 
     _stored = StoredState()
 
     def __init__(self, *args):
         super().__init__(*args)
-        self.framework.observe(self.on.httpbin_pebble_ready, self._on_httpbin_pebble_ready)
-        self.framework.observe(self.on.config_changed, self._on_config_changed)
-        self.framework.observe(self.on.fortune_action, self._on_fortune_action)
-        self._stored.set_default(things=[])
+        self.framework.observe(self.on.checkmk_pebble_ready, self._checkmk_pebble_ready)
+        self.framework.observe(self.on.install, self._on_install)
 
-    def _on_httpbin_pebble_ready(self, event):
-        """Define and start a workload using the Pebble API.
+        self._service_patcher = KubernetesServicePatch(
+            self, [(self.app.name, 6557, 6557), (self.app.name, 5000, 5000)]
+        )
 
-        TEMPLATE-TODO: change this example to suit your needs.
-        You'll need to specify the right entrypoint and environment
-        configuration for your specific workload. Tip: you can see the
-        standard entrypoint of an existing container using docker inspect
+    def _on_install(self, event):
+        logger.info("Congratulations, the charm was properly installed!")
 
-        Learn more about Pebble layers at https://github.com/canonical/pebble
+    def _checkmk_pebble_ready(self, event):
+        """Define checkmk peeble layer
+
+        Args:
+            event ([type]): event
         """
-        # Get a reference the container attribute on the PebbleReadyEvent
-        container = event.workload
-        # Define an initial Pebble layer configuration
-        pebble_layer = {
-            "summary": "httpbin layer",
-            "description": "pebble config layer for httpbin",
+        container = self.unit.get_container("checkmk")
+        new_layer = self._checkmk_layer()
+        container.add_layer("checkmk", new_layer, combine=True)
+        container.replan()
+        process = container.exec(["omd", "status"], timeout=5 * 60)
+        _, warnings = process.wait_output()
+        if warnings:
+            for line in warnings.splitlines():
+                logger.warning("OMD: %s", line.strip())
+
+        self.unit.status = ActiveStatus()
+
+    def _checkmk_layer(self) -> Layer:
+        """Create the Pebble configuration layer for Checkmk.
+
+        Returns:
+            Layer: A `ops.checkmk.Layer` object with the current layer options
+        """
+        layer_config = {
+            "summary": "Checkmk layer",
+            "description": "Checkmk layer",
             "services": {
-                "httpbin": {
+                "checkmk": {
                     "override": "replace",
-                    "summary": "httpbin",
-                    "command": "gunicorn -b 0.0.0.0:80 httpbin:app -k gevent",
+                    "summary": "Checkmk service",
+                    "command": "/docker-entrypoint.sh",
                     "startup": "enabled",
-                    "environment": {"thing": self.model.config["thing"]},
+                    "environment": {
+                        "CMK_LIVESTATUS_TCP": "on",
+                    },
                 }
             },
         }
-        # Add initial Pebble config layer using the Pebble API
-        container.add_layer("httpbin", pebble_layer, combine=True)
-        # Autostart any services that were defined with startup: enabled
-        container.autostart()
-        # Learn more about statuses in the SDK docs:
-        # https://juju.is/docs/sdk/constructs#heading--statuses
-        self.unit.status = ActiveStatus()
-
-    def _on_config_changed(self, _):
-        """Just an example to show how to deal with changed configuration.
-
-        TEMPLATE-TODO: change this example to suit your needs.
-        If you don't need to handle config, you can remove this method,
-        the hook created in __init__.py for it, the corresponding test,
-        and the config.py file.
-
-        Learn more about config at https://juju.is/docs/sdk/config
-        """
-        current = self.config["thing"]
-        if current not in self._stored.things:
-            logger.debug("found a new thing: %r", current)
-            self._stored.things.append(current)
-
-    def _on_fortune_action(self, event):
-        """Just an example to show how to receive actions.
-
-        TEMPLATE-TODO: change this example to suit your needs.
-        If you don't need to handle actions, you can remove this method,
-        the hook created in __init__.py for it, the corresponding test,
-        and the actions.py file.
-
-        Learn more about actions at https://juju.is/docs/sdk/actions
-        """
-        fail = event.params["fail"]
-        if fail:
-            event.fail(fail)
-        else:
-            event.set_results({"fortune": "A bug in the code is worth two in the documentation."})
+        return Layer(layer_config)
 
 
 if __name__ == "__main__":
-    main(OperatorTemplateCharm)
+    main(CheckmkK8SOperatorCharm)

@@ -1,23 +1,32 @@
-# Copyright 2022 Canonical Ltd.
+# Copyright 2022 Amanda Katz
 # See LICENSE file for licensing details.
 
 # For a complete list of supported options, see:
 # https://juju.is/docs/sdk/metadata-reference
-name: template-operator
+name: checkmk-k8s-operator
+display-name: |
+  checkmk
 description: |
-  TEMPLATE-TODO: fill out the charm's description
+  Checkmk is an Infrastructure and Application Monitoring tool
 summary: |
-  TEMPLATE-TODO: fill out the charm's summary
+  Simple operator for Checkmk Raw Edition
 
-# TEMPLATE-TODO: replace with containers for your workload (delete for non-k8s)
 containers:
-  httpbin:
-    resource: httpbin-image
-
-# TEMPLATE-TODO: each container defined above must specify an oci-image resource
+  checkmk:
+    resource: checkmk-image
+    mounts:
+      - storage: sites
+        location: /omd/sites
+    
 resources:
-  httpbin-image:
+  checkmk-image:
     type: oci-image
-    description: OCI image for httpbin (kennethreitz/httpbin)
-    # Included for simplicity in integration tests
-    upstream-source: kennethreitz/httpbin
+    description: OCI image for checkmk
+    # Enterprise checkmk images are not freely-available through Docker Hub
+    # https://docs.checkmk.com/latest/en/introduction_docker.html#install_cee
+    upstream-source: checkmk/check-mk-raw
+
+storage:
+  sites:
+    type: filesystem
+    location: "/checkmk-sites"

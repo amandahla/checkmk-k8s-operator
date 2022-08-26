@@ -1,8 +1,8 @@
-# operator-template
+# Checkmk Operator (WIP)
 
 ## Description
 
-TODO: Describe your charm in a few paragraphs of Markdown
+Checkmk is an Infrastructure and Application Monitoring tool. This operator is based on Checkmk Raw Edition (CRE) - it's Open Source and incorporates Nagios as its core.
 
 ## Usage
 
