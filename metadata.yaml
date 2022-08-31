@@ -30,3 +30,4 @@ storage:
   sites:
     type: filesystem
     location: "/checkmk-sites"
+    minimum-size: "10M"

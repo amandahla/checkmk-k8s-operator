@@ -1,0 +1,6 @@
+# Copyright 2022 Canonical Ltd.
+# See LICENSE file for licensing details.
+
+get-admin-password:
+  description: |
+    Get the initial admin password for Checkmk. It will generate and set a new admin password everytime it's called.

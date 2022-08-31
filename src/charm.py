@@ -8,12 +8,13 @@
 
 import logging
 
-from ops.charm import CharmBase
+from ops.charm import ActionEvent, CharmBase
 from ops.framework import StoredState
 from ops.main import main
 from charms.observability_libs.v0.kubernetes_service_patch import KubernetesServicePatch
-from ops.pebble import Layer
+from ops.pebble import ExecError, Layer
 from ops.model import ActiveStatus
+import secrets
 
 logger = logging.getLogger(__name__)
 
@@ -25,34 +26,36 @@ class CheckmkK8SOperatorCharm(CharmBase):
 
     def __init__(self, *args):
         super().__init__(*args)
-        self.framework.observe(self.on.checkmk_pebble_ready, self._checkmk_pebble_ready)
-        self.framework.observe(self.on.install, self._on_install)
+        self._stored.set_default(cmkadmin_password="")
+        self.framework.observe(self.on.checkmk_pebble_ready, self._on_checkmk_pebble_ready)
+        self.framework.observe(self.on.get_admin_password_action, self._on_get_admin_password)
 
         self._service_patcher = KubernetesServicePatch(
             self, [(self.app.name, 6557, 6557), (self.app.name, 5000, 5000)]
         )
 
-    def _on_install(self, event):
-        logger.info("Congratulations, the charm was properly installed!")
-
-    def _checkmk_pebble_ready(self, event):
+    def _on_checkmk_pebble_ready(self, event):
         """Define checkmk peeble layer
 
         Args:
             event ([type]): event
         """
         container = self.unit.get_container("checkmk")
-        new_layer = self._checkmk_layer()
-        container.add_layer("checkmk", new_layer, combine=True)
+        container.add_layer("checkmk", self._checkmk_layer, combine=True)
         container.replan()
-        process = container.exec(["omd", "status"], timeout=5 * 60)
-        _, warnings = process.wait_output()
-        if warnings:
-            for line in warnings.splitlines():
-                logger.warning("OMD: %s", line.strip())
-
         self.unit.status = ActiveStatus()
 
+    def _on_get_admin_password(self, event: ActionEvent) -> None:
+        """Returns the initial generated password for the admin user as an action response
+
+        Args:
+            event (ActionEvent): Get Admin Password event
+        """
+        if not self._stored.cmkadmin_password:
+            self._stored.cmkadmin_password = self._generate_cmkadmin_password()
+        event.set_results({"cmkadmin-password": self._stored.cmkadmin_password})
+
+    @property
     def _checkmk_layer(self) -> Layer:
         """Create the Pebble configuration layer for Checkmk.
 
@@ -75,6 +78,31 @@ class CheckmkK8SOperatorCharm(CharmBase):
             },
         }
         return Layer(layer_config)
+
+    def _generate_cmkadmin_password(self) -> str:
+        """Generates new cmkadmin password by calling omd command in the container
+
+        Returns:
+            str: New cmkadmin password - teste
+        """
+        container = self.unit.get_container("checkmk")
+
+        new_password = secrets.token_hex(16)
+
+        htpasswd_command = container.exec(
+            ["htpasswd", "-b", "-m", "etc/passwd", "cmkadmin", new_password],
+            timeout=5 * 60,
+            user="cmk",
+            group="cmk",
+        )
+
+        try:
+            htpasswd_command.wait()
+        except ExecError as e:
+            logger.error("unable to get cmkadmin password")
+            logger.debug(e.stderr)
+
+        return new_password
 
 
 if __name__ == "__main__":
