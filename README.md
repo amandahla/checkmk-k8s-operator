@@ -26,7 +26,7 @@ You can access the GUI in Checkmk via `http://<address>:5000/cmk/check_mk/`.
 
 To get the cmkadmin password, you can run the action get-admin-password:
 ```bash
-$ juju run-action checkmk-k8s-operator/0 get-admin-password --wait
+$ juju run-action checkmk-k8s-operator/0 get-cmkadmin-password --wait
 ```
 
 The output will be displayed as the example:

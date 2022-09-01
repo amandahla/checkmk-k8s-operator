@@ -7,19 +7,19 @@
 """Charmed Operator for Checkmk; an Infrastructure and Application Monitoring."""
 
 import logging
+import secrets
 
+from charms.observability_libs.v0.kubernetes_service_patch import KubernetesServicePatch
 from ops.charm import ActionEvent, CharmBase
 from ops.framework import StoredState
 from ops.main import main
-from charms.observability_libs.v0.kubernetes_service_patch import KubernetesServicePatch
-from ops.pebble import ExecError, Layer
 from ops.model import ActiveStatus
-import secrets
+from ops.pebble import ExecError, Layer
 
 logger = logging.getLogger(__name__)
 
 
-class CheckmkK8SOperatorCharm(CharmBase):
+class CheckmkCharm(CharmBase):
     """Charmed Operator for Checkmk, an Infrastructure and Application Monitoring."""
 
     _stored = StoredState()
@@ -28,14 +28,16 @@ class CheckmkK8SOperatorCharm(CharmBase):
         super().__init__(*args)
         self._stored.set_default(cmkadmin_password="")
         self.framework.observe(self.on.checkmk_pebble_ready, self._on_checkmk_pebble_ready)
-        self.framework.observe(self.on.get_admin_password_action, self._on_get_admin_password)
+        self.framework.observe(
+            self.on.get_cmkadmin_password_action, self._on_get_cmkadmin_password
+        )
 
         self._service_patcher = KubernetesServicePatch(
             self, [(self.app.name, 6557, 6557), (self.app.name, 5000, 5000)]
         )
 
     def _on_checkmk_pebble_ready(self, event):
-        """Define checkmk peeble layer
+        """Define checkmk peeble layer.
 
         Args:
             event ([type]): event
@@ -45,8 +47,8 @@ class CheckmkK8SOperatorCharm(CharmBase):
         container.replan()
         self.unit.status = ActiveStatus()
 
-    def _on_get_admin_password(self, event: ActionEvent) -> None:
-        """Returns the initial generated password for the admin user as an action response
+    def _on_get_cmkadmin_password(self, event: ActionEvent) -> None:
+        """Returns the initial generated password for the cmkadmin user as an action response.
 
         Args:
             event (ActionEvent): Get Admin Password event
@@ -63,8 +65,6 @@ class CheckmkK8SOperatorCharm(CharmBase):
             Layer: A `ops.checkmk.Layer` object with the current layer options
         """
         layer_config = {
-            "summary": "Checkmk layer",
-            "description": "Checkmk layer",
             "services": {
                 "checkmk": {
                     "override": "replace",
@@ -80,17 +80,20 @@ class CheckmkK8SOperatorCharm(CharmBase):
         return Layer(layer_config)
 
     def _generate_cmkadmin_password(self) -> str:
-        """Generates new cmkadmin password by calling omd command in the container
+        """Generates new cmkadmin password by calling omd command in the container.
 
         Returns:
             str: New cmkadmin password - teste
         """
+        logger.info("generating new cmkadmin password")
+
         container = self.unit.get_container("checkmk")
 
         new_password = secrets.token_hex(16)
 
         htpasswd_command = container.exec(
-            ["htpasswd", "-b", "-m", "etc/passwd", "cmkadmin", new_password],
+            ["/usr/bin/htpasswd", "-b", "-m", "etc/htpasswd", "cmkadmin", new_password],
+            working_dir="/opt/omd/sites/cmk",
             timeout=5 * 60,
             user="cmk",
             group="cmk",
@@ -100,10 +103,10 @@ class CheckmkK8SOperatorCharm(CharmBase):
             htpasswd_command.wait()
         except ExecError as e:
             logger.error("unable to get cmkadmin password")
-            logger.debug(e.stderr)
+            logger.error(e.stderr)
 
         return new_password
 
 
 if __name__ == "__main__":
-    main(CheckmkK8SOperatorCharm)
+    main(CheckmkCharm)

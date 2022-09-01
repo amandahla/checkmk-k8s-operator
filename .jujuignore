@@ -2,3 +2,8 @@
 *.py[cod]
 *.charm
 .git
+.vscode
+.tox
+.github
+.gitignore
+.mypy_cache

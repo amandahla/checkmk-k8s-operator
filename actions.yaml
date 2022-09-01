@@ -1,6 +1,6 @@
 # Copyright 2022 Canonical Ltd.
 # See LICENSE file for licensing details.
 
-get-admin-password:
+get-cmkadmin-password:
   description: |
-    Get the initial admin password for Checkmk. It will generate and set a new admin password everytime it's called.
+    Get the initial cmkadmin password for Checkmk. It will generate and set a new cmkadmin password every time it's called.
