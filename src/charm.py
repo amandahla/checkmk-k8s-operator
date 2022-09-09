@@ -32,9 +32,7 @@ class CheckmkCharm(CharmBase):
             self.on.get_cmkadmin_password_action, self._on_get_cmkadmin_password
         )
 
-        self._service_patcher = KubernetesServicePatch(
-            self, [(self.app.name, 6557, 6557), (self.app.name, 5000, 5000)]
-        )
+        self._service_patcher = KubernetesServicePatch(self, [(self.app.name, 5000, 5000)])
 
     def _on_checkmk_pebble_ready(self, event):
         """Define checkmk peeble layer.

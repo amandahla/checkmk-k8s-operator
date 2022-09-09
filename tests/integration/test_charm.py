@@ -3,49 +3,55 @@
 # See LICENSE file for licensing details.
 
 
+import asyncio
 import logging
-import urllib.request
-from pathlib import Path
 
 import pytest
-import yaml
+import requests
 from pytest_operator.plugin import OpsTest
+from tenacity import retry
+from tenacity.stop import stop_after_attempt
+from tenacity.wait import wait_exponential as wexp
 
 logger = logging.getLogger(__name__)
 
-METADATA = yaml.safe_load(Path("./metadata.yaml").read_text())
-APP_NAME = METADATA["name"]
+APPNAME = "checkmk"
 
 
 @pytest.mark.abort_on_fail
-async def test_build_and_deploy(ops_test: OpsTest):
-    """Build the charm-under-test and deploy it together with related charms.
+async def test_build_and_deploy(ops_test: OpsTest, checkmk_charm, checkmk_oci_image):
+    """Builds charm using checkmk_charm and then deploy it.
 
-    Assert on the unit status before any relations/configurations take place.
+    Args:
+        ops_test (OpsTest): Operator test
+        checkmk_charm (function): function that builds charm
+        checkmk_oci_image (str): defined in field upstream-source in metadata.yaml
     """
-    # build and deploy charm from local source folder
-    charm = await ops_test.build_charm(".")
-    resources = {"httpbin-image": METADATA["resources"]["httpbin-image"]["upstream-source"]}
-    await ops_test.model.deploy(charm, resources=resources, application_name=APP_NAME)
-
-    # issuing dummy update_status just to trigger an event
-    async with ops_test.fast_forward():
-        await ops_test.model.wait_for_idle(
-            apps=[APP_NAME],
-            status="active",
-            raise_on_blocked=True,
-            timeout=1000,
-        )
-        assert ops_test.model.applications[APP_NAME].units[0].workload_status == "active"
+    await asyncio.gather(
+        ops_test.model.deploy(
+            await checkmk_charm,
+            application_name=APPNAME,
+            resources={"checkmk-image": checkmk_oci_image},
+            trust=True,
+        ),
+        ops_test.model.wait_for_idle(apps=[APPNAME], status="active", timeout=1000),
+    )
 
 
 @pytest.mark.abort_on_fail
+@retry(wait=wexp(multiplier=2, min=1, max=30), stop=stop_after_attempt(10), reraise=True)
 async def test_application_is_up(ops_test: OpsTest):
-    status = await ops_test.model.get_status()  # noqa: F821
-    address = status["applications"][APP_NAME]["units"][f"{APP_NAME}/0"]["address"]
+    """Tests if Checkmk is up.
 
-    url = f"http://{address}"
+    Args:
+        ops_test (OpsTest): Operator test
 
-    logger.info("querying app address: %s", url)
-    response = urllib.request.urlopen(url, data=None, timeout=2.0)
-    assert response.code == 200
+    Returns:
+        bool: check if status code is 200 (OK HTTP)
+    """
+    status = await ops_test.model.get_status()
+    address = status["applications"][APPNAME]["public-address"]
+    url = f"http://{address}:5000/cmk/check_mk/"
+    logging.info(f"accessing {url}")
+    response = requests.get(url)
+    return response.status_code == 200

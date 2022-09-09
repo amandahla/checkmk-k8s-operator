@@ -17,10 +17,7 @@ To monitor the deployment:
 $ juju status
 ```
 
-As soon as the status is active, you can get the IP address by status output or running:
-```bash
-$ juju show-unit checkmk-k8s-operator/0 --format=yaml|awk -F': ' '/address/{print $2}'
-```
+As soon as the status is active, you can get the IP address by status output in App.
 
 You can access the GUI in Checkmk via `http://<address>:5000/cmk/check_mk/`.
 
