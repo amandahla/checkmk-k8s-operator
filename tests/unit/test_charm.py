@@ -4,7 +4,7 @@
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from ops.model import ActiveStatus
 from ops.testing import Harness
@@ -42,3 +42,27 @@ class TestCharm(unittest.TestCase):
 
         # Ensure we set an ActiveStatus with no message
         self.assertEqual(self.harness.model.unit.status, ActiveStatus())
+
+    @patch("charm.CheckmkCharm._generate_cmkadmin_password")
+    def test_get_cmkadmin_password_action(self, generate):
+        mock_event = Mock()
+
+        # Password expected
+        generate.return_value = "password"
+
+        # Trigger the event handler
+        self.harness.charm._on_get_cmkadmin_password(mock_event)
+
+        # Ensure stored state was updated with a generated password
+        self.assertEqual(self.harness.charm._stored.cmkadmin_password, "password")
+
+        # Ensure is called once
+        generate.assert_called_once()
+
+        # Make sure we return the generated password
+        mock_event.called_once_with({"cmkadmin-password": "password]"})
+
+        # Call again and make sure we don't call the generate_cmkadmin_password again
+        generate.reset_mock()
+        self.harness.charm._on_get_cmkadmin_password(mock_event)
+        generate.assert_not_called()
